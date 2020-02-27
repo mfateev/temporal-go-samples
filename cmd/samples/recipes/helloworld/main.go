@@ -1,53 +1,71 @@
 package main
 
 import (
-	"flag"
+	"context"
+	"fmt"
+	"go.temporal.io/temporal/workflow"
 	"time"
 
-	"github.com/pborman/uuid"
+	"go.temporal.io/temporal-proto/workflowservice"
 	"go.temporal.io/temporal/client"
 	"go.temporal.io/temporal/worker"
-
-	"github.com/temporalio/temporal-go-samples/cmd/samples/common"
+	"google.golang.org/grpc"
 )
 
-// This needs to be done as part of a bootstrap step when the process starts.
-// The workers are supposed to be long running.
-func startWorkers(h *common.SampleHelper) {
-	// Configure worker options.
-	workerOptions := worker.Options{
-		MetricsScope: h.Scope,
-		Logger:       h.Logger,
+const localServiceAddress = "127.0.0.1:7233"
+const domain = "sample"
+const taskList = "HelloWorld"
+
+func HelloWorldWorkflow(ctx workflow.Context, name string) (string, error) {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToCloseTimeout: time.Second * 5,
+		ScheduleToStartTimeout: time.Second * 5,
+		StartToCloseTimeout:    time.Second * 5,
+	})
+	var result string
+	err := workflow.ExecuteActivity(ctx, helloWorldActivity, name).Get(ctx, &result)
+	if err != nil {
+		return "", fmt.Errorf("failure executing helloWorldActivity: %w", err)
 	}
-	h.StartWorkers(h.Config.DomainName, ApplicationName, workerOptions)
+	return result, nil
 }
 
-func startWorkflow(h *common.SampleHelper) {
-	workflowOptions := client.StartWorkflowOptions{
-		ID:                              "helloworld_" + uuid.New(),
-		TaskList:                        ApplicationName,
-		ExecutionStartToCloseTimeout:    time.Minute,
-		DecisionTaskStartToCloseTimeout: time.Minute,
-	}
-	h.StartWorkflow(workflowOptions, Workflow, "Cadence")
+func helloWorldActivity(ctx context.Context, name string) (string, error) {
+	return "Hello " + name + "!", nil
 }
 
 func main() {
-	var mode string
-	flag.StringVar(&mode, "m", "trigger", "Mode is worker or trigger.")
-	flag.Parse()
-
-	var h common.SampleHelper
-	h.SetupServiceConfig()
-
-	switch mode {
-	case "worker":
-		startWorkers(&h)
-
-		// The workers are supposed to be long running process that should not exit.
-		// Use select{} to block indefinitely for samples, you can quit by CMD+C.
-		select {}
-	case "trigger":
-		startWorkflow(&h)
+	connection, err := grpc.Dial(localServiceAddress, grpc.WithInsecure())
+	if err != nil {
+		panic(err)
 	}
+	serviceClient := workflowservice.NewWorkflowServiceClient(connection)
+
+	// Worker hosts both workflow and activity code
+	worker := worker.New(serviceClient, domain, taskList, worker.Options{})
+	worker.RegisterWorkflow(HelloWorldWorkflow)
+	worker.RegisterActivity(helloWorldActivity)
+	err = worker.Start()
+	if err != nil {
+		panic(err)
+	}
+
+	// Start workflow execution. In the majority of real applications the start is called from a different process.
+	tClient := client.NewClient(serviceClient, domain, nil)
+	startOptions := client.StartWorkflowOptions{
+		ExecutionStartToCloseTimeout: time.Minute,
+		TaskList:                     taskList,
+	}
+	run, err := tClient.ExecuteWorkflow(context.Background(), startOptions, HelloWorldWorkflow, "World")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("Started HelloWorld workflow with ID=%v and RunID=%v\n", run.GetID(), run.GetRunID())
+
+	// Block until workflow is completed.
+	var result string
+	if err = run.Get(context.Background(), &result); err != nil {
+		panic(err)
+	}
+	fmt.Printf("Workflow result: %v\n", result)
 }

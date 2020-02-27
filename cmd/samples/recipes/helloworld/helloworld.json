@@ -8,7 +8,7 @@
       "taskId": 33554432,
       "workflowExecutionStartedEventAttributes": {
         "workflowType": {
-          "name": "github.com/temporalio/temporal-go-samples/cmd/samples/recipes/helloworld.Workflow"
+          "name": "HelloWorldWorkflow"
         },
         "taskList": {
           "name": "helloWorldGroup"
@@ -69,7 +69,7 @@
       "activityTaskScheduledEventAttributes": {
         "activityId": "0",
         "activityType": {
-          "name": "main.helloworldActivity"
+          "name": "helloWorldActivity"
         },
         "taskList": {
           "name": "helloWorldGroup"
