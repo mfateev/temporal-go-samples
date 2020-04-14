@@ -34,6 +34,8 @@ func Workflow(ctx workflow.Context, name string) (*Customer, error) {
 
 type Customer struct {
 	Name string
+	Foo  struct{}
+	Blob []byte
 }
 
 func Activity(ctx context.Context, name string) (*Customer, error) {
