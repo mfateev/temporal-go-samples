@@ -10,7 +10,7 @@ import (
 )
 
 // Workflow is a Hello World workflow definition.
-func Workflow(ctx workflow.Context, name string) (string, error) {
+func Workflow(ctx workflow.Context, name string) (*Customer, error) {
 	ao := workflow.ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
 		StartToCloseTimeout:    time.Minute,
@@ -18,22 +18,26 @@ func Workflow(ctx workflow.Context, name string) (string, error) {
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	logger := workflow.GetLogger(ctx)
-	logger.Info("HelloWorld workflow started", zap.String("name", name))
+	logger.Info("HelloWorld workflow started", zap.String("Name", name))
 
-	var result string
+	var result Customer
 	err := workflow.ExecuteActivity(ctx, Activity, name).Get(ctx, &result)
 	if err != nil {
 		logger.Error("Activity failed.", zap.Error(err))
-		return "", err
+		return nil, err
 	}
 
-	logger.Info("HelloWorld workflow completed.", zap.String("result", result))
+	logger.Info("HelloWorld workflow completed.", zap.String("result", result.Name))
 
-	return result, nil
+	return &result, nil
 }
 
-func Activity(ctx context.Context, name string) (string, error) {
+type Customer struct {
+	Name string
+}
+
+func Activity(ctx context.Context, name string) (*Customer, error) {
 	logger := activity.GetLogger(ctx)
-	logger.Info("Activity", zap.String("name", name))
-	return "Hello " + name + "!", nil
+	logger.Info("Activity", zap.String("Name", name))
+	return &Customer{Name: "Hello " + name + "!"}, nil
 }

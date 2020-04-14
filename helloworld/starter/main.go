@@ -37,10 +37,10 @@ func main() {
 	logger.Info("Started workflow", zap.String("WorkflowID", we.GetID()), zap.String("RunID", we.GetRunID()))
 
 	// Synchronously wait for the workflow completion.
-	var result string
+	var result helloworld.Customer
 	err = we.Get(context.Background(), &result)
 	if err != nil {
 		logger.Fatal("Unable get workflow result", zap.Error(err))
 	}
-	logger.Info("Workflow result", zap.String("Result", result))
+	logger.Info("Workflow result", zap.String("Result",  result.Name))
 }
