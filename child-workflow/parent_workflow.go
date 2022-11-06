@@ -2,6 +2,7 @@ package child_workflow
 
 import (
 	"go.temporal.io/sdk/workflow"
+	"time"
 )
 
 // @@@SNIPSTART samples-go-child-workflow-example-parent-workflow-definition
@@ -18,7 +19,15 @@ func SampleParentWorkflow(ctx workflow.Context) (string, error) {
 	ctx = workflow.WithChildOptions(ctx, cwo)
 
 	var result string
+	child1 := workflow.ExecuteChildWorkflow(ctx, SampleChildWorkflow, "World")
+
+	workflow.Sleep(ctx, 10*time.Second)
 	err := workflow.ExecuteChildWorkflow(ctx, SampleChildWorkflow, "World").Get(ctx, &result)
+	if err != nil {
+		logger.Error("Parent execution received second child execution failure.", "Error", err)
+		return "", err
+	}
+	err = child1.Get(ctx, &result)
 	if err != nil {
 		logger.Error("Parent execution received child execution failure.", "Error", err)
 		return "", err
