@@ -88,15 +88,38 @@ func MutexWorkflow(
 	logger := workflow.GetLogger(ctx)
 	logger.Info("started", "currentWorkflowID", currentWorkflowID)
 	requestLockCh := workflow.GetSignalChannel(ctx, RequestLockSignalName)
+	locked := false
+	goroutineCount := 0
 	for {
 		var senderWorkflowID string
 		if !requestLockCh.ReceiveAsync(&senderWorkflowID) {
 			logger.Info("no more signals")
 			break
 		}
-		tryLock(ctx, senderWorkflowID, unlockTimeout)
+		goroutineCount++
+		workflow.Go(ctx, func(ctx workflow.Context) {
+			if locked {
+				cancelSender(ctx, senderWorkflowID)
+			} else {
+				locked = true
+				tryLock(ctx, senderWorkflowID, unlockTimeout)
+				locked = false
+			}
+			goroutineCount--
+		})
 	}
+	workflow.Await(ctx, func() bool {
+		return goroutineCount == 0
+	})
 	return nil
+}
+
+func cancelSender(ctx workflow.Context, senderWorkflowID string) {
+	logger := workflow.GetLogger(ctx)
+	err := workflow.RequestCancelExternalWorkflow(ctx, senderWorkflowID, "").Get(ctx, nil)
+	if err != nil {
+		logger.Info("CancelExternalWorkflow error", "Error", err)
+	}
 }
 
 func tryLock(ctx workflow.Context, senderWorkflowID string, unlockTimeout time.Duration) {
