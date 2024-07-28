@@ -87,7 +87,6 @@ func MutexWorkflow(
 	}
 	logger := workflow.GetLogger(ctx)
 	logger.Info("started", "currentWorkflowID", currentWorkflowID)
-	var ack string
 	requestLockCh := workflow.GetSignalChannel(ctx, RequestLockSignalName)
 	for {
 		var senderWorkflowID string
@@ -95,35 +94,34 @@ func MutexWorkflow(
 			logger.Info("no more signals")
 			break
 		}
-		var releaseLockChannelName string
-		_ = workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
-			return generateUnlockChannelName(senderWorkflowID)
-		}).Get(&releaseLockChannelName)
-		logger.Info("generated release lock channel name", "releaseLockChannelName", releaseLockChannelName)
-		// Send release lock channel name back to a senderWorkflowID, so that it can
-		// release the lock using release lock channel name
-		err := workflow.SignalExternalWorkflow(ctx, senderWorkflowID, "",
-			AcquireLockSignalName, releaseLockChannelName).Get(ctx, nil)
-		if err != nil {
-			// .Get(ctx, nil) blocks until the signal is sent.
-			// If the senderWorkflowID is closed (terminated/canceled/timeouted/completed/etc), this would return error.
-			// In this case we release the lock immediately instead of failing the mutex workflow.
-			// Mutex workflow failing would lead to all workflows that have sent requestLock will be waiting.
-			logger.Info("SignalExternalWorkflow error", "Error", err)
-			continue
-		}
-		logger.Info("signaled external workflow")
-		selector := workflow.NewSelector(ctx)
-		selector.AddFuture(workflow.NewTimer(ctx, unlockTimeout), func(f workflow.Future) {
-			logger.Info("unlockTimeout exceeded")
-		})
-		selector.AddReceive(workflow.GetSignalChannel(ctx, releaseLockChannelName), func(c workflow.ReceiveChannel, more bool) {
-			c.Receive(ctx, &ack)
-			logger.Info("release signal received")
-		})
-		selector.Select(ctx)
+		tryLock(ctx, senderWorkflowID, unlockTimeout)
 	}
 	return nil
+}
+
+func tryLock(ctx workflow.Context, senderWorkflowID string, unlockTimeout time.Duration) {
+	logger := workflow.GetLogger(ctx)
+	var releaseLockChannelName string
+	_ = workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+		return generateUnlockChannelName(senderWorkflowID)
+	}).Get(&releaseLockChannelName)
+	logger.Info("generated release lock channel name", "releaseLockChannelName", releaseLockChannelName)
+	// Send release lock channel name back to a senderWorkflowID, so that it can
+	// release the lock using release lock channel name
+	err := workflow.SignalExternalWorkflow(ctx, senderWorkflowID, "",
+		AcquireLockSignalName, releaseLockChannelName).Get(ctx, nil)
+	if err != nil {
+		// .Get(ctx, nil) blocks until the signal is sent.
+		// If the senderWorkflowID is closed (terminated/canceled/timeouted/completed/etc), this would return error.
+		// In this case we release the lock immediately instead of failing the mutex workflow.
+		// Mutex workflow failing would lead to all workflows that have sent requestLock will be waiting.
+		logger.Info("SignalExternalWorkflow error", "Error", err)
+		return
+	}
+	logger.Info("signaled external workflow")
+	var ack string
+	workflow.GetSignalChannel(ctx, releaseLockChannelName).ReceiveWithTimeout(ctx, unlockTimeout, &ack)
+	logger.Info("release signal received: " + ack)
 }
 
 // SignalWithStartMutexWorkflowActivity ...
