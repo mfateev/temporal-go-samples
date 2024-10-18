@@ -1,6 +1,7 @@
 package child_workflow
 
 import (
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -14,6 +15,9 @@ func SampleParentWorkflow(ctx workflow.Context) (string, error) {
 
 	cwo := workflow.ChildWorkflowOptions{
 		WorkflowID: "ABC-SIMPLE-CHILD-WORKFLOW-ID",
+		RetryPolicy: &temporal.RetryPolicy{
+			MaximumAttempts: 3,
+		},
 	}
 	ctx = workflow.WithChildOptions(ctx, cwo)
 

@@ -24,6 +24,7 @@ func main() {
 
 	w.RegisterWorkflow(child_workflow.SampleParentWorkflow)
 	w.RegisterWorkflow(child_workflow.SampleChildWorkflow)
+	w.RegisterActivity(child_workflow.ChildActivity)
 
 	err = w.Run(worker.InterruptCh())
 	if err != nil {
